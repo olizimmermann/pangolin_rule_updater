@@ -1,0 +1,7 @@
+version: "3.9"
+services:
+  ip-updater:
+    build: .
+    env_file: .env        # keep secrets out of Git
+    restart: unless-stopped
+

@@ -1,2 +1,230 @@
-# pangolin_rule_updater
-Small service which updates a service rule of your pangolin service 
+# Dynamic IP Updater for Pangolin Rules
+
+[![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+[![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://www.python.org/)
+
+A lightweight Docker container that automatically monitors your external IP address and updates Pangolin rules when changes are detected. Perfect for home servers, VPS instances, or any infrastructure that needs to maintain dynamic IP-based firewall rules.
+
+## 🚀 Features
+
+- **Automatic IP Monitoring**: Checks your external IP address every minute (configurable)
+- **Smart Updates**: Only updates firewall rules when IP actually changes
+- **Environment-Based Configuration**: All settings managed through `.env` file
+- **Docker Compose Ready**: Easy deployment with single command
+- **Robust Error Handling**: Continues running even if API calls fail temporarily
+- **Detailed Logging**: Track all IP changes and rule updates
+
+## 📋 Prerequisites
+
+- Docker and Docker Compose installed
+- Valid Pangolin API access token
+- Pangolin rule ID that you want to update
+
+## 🛠️ Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/olizimmermann/pangolin_rule_updater.git
+   cd pangolin-ip-updater
+   ```
+
+2. **Create your environment file**
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Configure your settings** (see Configuration section below)
+
+4. **Build and start the container**
+   ```bash
+   docker compose up -d
+   ```
+
+## ⚙️ Configuration
+
+Create a `.env` file in the project root with the following variables:
+
+```env
+# Pangolin credentials
+API_KEY=YOUR_LONG_BEARER_TOKEN
+RESOURCE_ID=1 # replace with your resource id
+RULE_ID=1 # replace with your rule
+RULE_PRIORITY=1 # replace with yours
+RULE_ACTION=ACCEPT 
+RULE_MATCH=IP # IP, CIDR, PATH 
+RULE_ENABLED=True
+
+PANGOLIN_HOST=https://api.pangolin.example  
+
+# Runtime controls (optional)
+IP_SERVICE_URL=https://api.ipify.org     # any plain-text IP service
+LOOP_SECONDS=60                          # check interval in seconds
+```
+
+### Configuration Parameters
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `API_KEY` | ✅ | - | Your Pangolin API Bearer token |
+| `RESOURCE_ID` | ✅ | - | The resource ID in Pangolin API |
+| `RULE_ID` | ✅ | - | The specific rule ID to update |
+| `RULE_PRIORITY` | ❌ | 100 | The specific rule priority |
+| `RULE_ACTION` | ❌ | ACCEPT | The specific rule action [ACCEPT, DROP]  |
+| `RULE_MATCH` | ❌ | IP | The specific rule match [IP, CIDR, PATH] |
+| `RULE_ENABLED` | ❌ | True | Enable or disable the rule |
+| `PANGOLIN_HOST` | ❌ | `https://api.pangolin.example` | Pangolin API base URL |
+| `IP_SERVICE_URL` | ❌ | `https://api.ipify.org` | External IP detection service |
+| `LOOP_SECONDS` | ❌ | `60` | Check interval in seconds |
+
+## 🚀 Usage
+
+### Start the Service
+```bash
+docker compose up -d
+```
+
+### View Logs
+```bash
+docker compose logs -f
+```
+
+### Stop the Service
+```bash
+docker compose down
+```
+
+### Rebuild After Changes
+```bash
+docker compose build --no-cache
+docker compose up -d
+```
+
+## 📁 Project Structure
+
+```
+pangolin-ip-updater/
+├── Dockerfile              # Container definition
+├── docker-compose.yml      # Service orchestration
+├── update_ip.py            # Main application logic
+├── requirements.txt        # Python dependencies
+├── .env.example            # Template for environment variables
+├── .env                    # Your actual configuration (create this)
+├── .gitignore              # Git ignore rules
+└── README.md               # This file
+```
+
+## 🔧 API Reference
+
+The application interacts with Pangolin API using these endpoints:
+
+### Get Rule Information
+```bash
+curl -X 'GET' \
+  'https://api.pangolin.example/v1/resource/{RESOURCE_ID}/rules' \
+  -H 'Authorization: Bearer {API_KEY}'
+```
+
+### Update Rule
+```bash
+curl -X 'POST' \
+  'https://api.pangolin.example/v1/resource/{RESOURCE_ID}/rule/{RULE_ID}' \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer {API_KEY}' \
+  -d '{
+    "action": "ACCEPT",
+    "match": "IP",
+    "value": "NEW.IP.ADDRESS.HERE",
+    "priority": 2,
+    "enabled": true
+  }'
+```
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**Container exits immediately**
+- Check your `.env` file exists and has all required variables
+- Verify your API key is valid
+- Check logs: `docker compose logs`
+
+**API authentication errors**
+- Ensure your `API_KEY` is correct and active
+- Verify the Bearer token format
+
+**Rule not updating**
+- Confirm `RESOURCE_ID` and `RULE_ID` are correct
+- Test API access manually with curl commands above
+- Check if your IP actually changed
+
+**Network connectivity issues**
+- Verify container has internet access
+- Try different IP detection service in `IP_SERVICE_URL`
+
+### Debug Mode
+To run with more verbose logging:
+```bash
+docker compose logs -f ip-updater
+```
+
+## 🔒 Security Considerations
+
+- **Never commit your `.env` file** - it contains sensitive API credentials
+- Store your `.env` file securely and restrict file permissions
+- Consider using Docker secrets for production deployments
+- Regularly rotate your API keys
+
+## 🚀 Advanced Usage
+
+### Multiple Rules
+To update multiple rules, deploy separate containers with different `.env` files:
+
+```bash
+# Rule 1
+docker compose -f docker-compose.rule1.yml up -d
+
+# Rule 2  
+docker compose -f docker-compose.rule2.yml up -d
+```
+
+### Custom Check Intervals
+Adjust the `LOOP_SECONDS` variable for different check frequencies:
+- `30` - Every 30 seconds (aggressive)
+- `300` - Every 5 minutes (conservative)
+- `3600` - Every hour (minimal)
+
+### IPv6 Support
+To monitor IPv6 addresses, update your `.env`:
+```env
+IP_SERVICE_URL=https://api6.ipify.org
+```
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- [Pangolin](https://pangolin.example) for providing this great project
+- [ipify](https://www.ipify.org/) for reliable IP detection service
+- Docker community for containerization best practices
+
+## 📞 Support
+
+If you encounter any issues or have questions:
+
+1. Check the [Troubleshooting](#-troubleshooting) section
+2. Review existing [Issues](https://github.com/olizimmermann/pangolin_rule_updater/issues)
+3. Create a new issue with detailed information about your problem
+
+---
+
+**⭐ If this project helped you, please consider giving it a star!**
