@@ -99,6 +99,32 @@ docker compose build --no-cache
 docker compose up -d
 ```
 
+## 🚀 Stack Deployment in Portainer (Example)
+```bash
+services:
+  pangolin-rule-updater:
+    container_name: pangolin-rule-updater
+    build:
+      context: https://github.com/olizimmermann/pangolin_rule_updater.git#main
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # --- Required ---
+      API_KEY: YOUR_API_TOKEN  # Pangolin API Token
+      RESOURCE_ID: "1"                      # ID deiner Resource in Pangolin
+      RULE_ID: "1"                          # ID der zu aktualisierenden Regel
+
+      # --- Optional ---
+      RULE_PRIORITY: "1"
+      RULE_ACTION: "ACCEPT"                 # ACCEPT oder DROP
+      RULE_MATCH: "IP"                      # IP, CIDR oder PATH
+      RULE_ENABLED: "True"
+      PANGOLIN_HOST: "https://api.example.com"
+
+      IP_SERVICE_URL: "https://api.ipify.org" # Liefert die externe IP im Klartext
+      LOOP_SECONDS: "60"                       # Prüfintervall in Sekunden
+```
+
 ## 📁 Project Structure
 
 ```
