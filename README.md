@@ -111,8 +111,8 @@ services:
     environment:
       # --- Required ---
       API_KEY: YOUR_API_TOKEN  # Pangolin API Token
-      RESOURCE_ID: "1"                      # ID deiner Resource in Pangolin
-      RULE_ID: "1"                          # ID der zu aktualisierenden Regel
+      RESOURCE_ID: "1"                      # ID of your Pangolin Resource
+      RULE_ID: "1"                          # ID of your Rule
 
       # --- Optional ---
       RULE_PRIORITY: "1"
@@ -121,8 +121,8 @@ services:
       RULE_ENABLED: "True"
       PANGOLIN_HOST: "https://api.example.com"
 
-      IP_SERVICE_URL: "https://api.ipify.org" # Liefert die externe IP im Klartext
-      LOOP_SECONDS: "60"                       # Prüfintervall in Sekunden
+      IP_SERVICE_URL: "https://api.ipify.org" # External IP
+      LOOP_SECONDS: "60"                       # Check interval in seconds
 ```
 
 ## 📁 Project Structure
