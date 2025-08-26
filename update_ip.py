@@ -61,7 +61,8 @@ def get_rule_value() -> str:
     for rule in rules:
         if rule["ruleId"] == int(RULE_ID):
             return rule["value"]
-    raise ValueError(f"Rule ID {RULE_ID} not found")
+    print(f"[info] Rule ID {RULE_ID} not found")
+    return None
 
 def update_rule(new_ip: str):
     """POST an updated rule when the IP has changed."""
