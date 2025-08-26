@@ -17,15 +17,21 @@ A lightweight Docker container that automatically monitors your external IP addr
 ## 📋 Prerequisites
 
 - Docker and Docker Compose installed
+- Enable the Integration API: https://docs.digpangolin.com/manage/integration-api
 - Valid Pangolin API access token
+  - Permission required: Resource Rule -> List Resource Rules
+  - Permission required: Resource Rule -> Update Resource Rule
 - Pangolin rule ID that you want to update
+  - Visit the Swagger API at https://api.url.com/v1/docs
+Authorize using your Pangolin API token
+Enter your Resource ID (from the URL in Pangolin) into the Rules /resource/{resourceId}/rules API and click "Execute". This will list out all the Rules and the Rule ID associated with the Pangolin Resource
 
 ## 🛠️ Installation
 
 1. **Clone the repository**
    ```bash
    git clone https://github.com/olizimmermann/pangolin_rule_updater.git
-   cd pangolin-ip-updater
+   cd pangolin_rule_updater
    ```
 
 2. **Create your environment file**
@@ -53,12 +59,20 @@ RULE_PRIORITY=1 # replace with yours
 RULE_ACTION=ACCEPT 
 RULE_MATCH=IP # IP, CIDR, PATH 
 RULE_ENABLED=True
+TARGET_DOMAIN=my.dyn.dns.com  # your dynamic DNS hostname or leave empty to check for current IP of the host
 
-PANGOLIN_HOST=https://api.pangolin.example  
+PANGOLIN_HOST=https://api.pangolin.example
 
 # Runtime controls (optional)
 IP_SERVICE_URL=https://api.ipify.org     # any plain-text IP service
 LOOP_SECONDS=60                          # check interval in seconds
+
+
+# Enable this to expose a website to trigger an update, make sure that only trusted clients can access it/know it
+EXPOSE_TRIGGER_WEBSITE=False
+TRIGGER_WEBSITE_DOMAIN=trigger.my.dyn.dns.com
+TRIGGER_WEBSITE_PATH=/update
+TRIGGER_WEBSITE_PORT=8080                  # check interval in seconds
 ```
 
 ### Configuration Parameters
@@ -68,13 +82,18 @@ LOOP_SECONDS=60                          # check interval in seconds
 | `API_KEY` | ✅ | - | Your Pangolin API Bearer token |
 | `RESOURCE_ID` | ✅ | - | The resource ID in Pangolin API |
 | `RULE_ID` | ✅ | - | The specific rule ID to update |
+| `PANGOLIN_HOST` | ✅  | `https://api.pangolin.example` | Pangolin API base URL |
 | `RULE_PRIORITY` | ❌ | 100 | The specific rule priority |
 | `RULE_ACTION` | ❌ | ACCEPT | The specific rule action [ACCEPT, DROP]  |
 | `RULE_MATCH` | ❌ | IP | The specific rule match [IP, CIDR, PATH] |
 | `RULE_ENABLED` | ❌ | True | Enable or disable the rule |
-| `PANGOLIN_HOST` | ❌ | `https://api.pangolin.example` | Pangolin API base URL |
 | `IP_SERVICE_URL` | ❌ | `https://api.ipify.org` | External IP detection service |
 | `LOOP_SECONDS` | ❌ | `60` | Check interval in seconds |
+| `TARGET_DOMAIN` | ❌ | `my.dyn.dns.com` | Your dynamic DNS hostname (disables the default self-ip-check)|
+| `EXPOSE_TRIGGER_WEBSITE` | ❌ | False | Enable trigger website for manual updates (disables automatic updates) |
+| `TRIGGER_WEBSITE_DOMAIN` | ❌ | `trigger.my.dyn.dns.com` | Domain for the trigger website |
+| `TRIGGER_WEBSITE_PATH` | ❌ | `/update` | Path for the trigger website |
+| `TRIGGER_WEBSITE_PORT` | ❌ | 8080 | Port for the trigger website |
 
 ## 🚀 Usage
 
@@ -98,6 +117,39 @@ docker compose down
 docker compose build --no-cache
 docker compose up -d
 ```
+
+### Using DYN DNS
+
+Just set the `TARGET_DOMAIN` variable in your `.env` file to your dynamic DNS hostname. **This will replace the default self-IP check.**
+
+### Using the trigger webservice
+
+The trigger webservice allows you to manually trigger an IP update by sending a request to the specified endpoint, or just by visiting the URL in your browser. Set the following in your `docker-compose.yml`:
+
+```yaml
+services:
+  ip-updater:
+    build: .
+    env_file: .env       
+    restart: unless-stopped
+    ports:
+      - "${TRIGGER_WEBSITE_PORT}:${TRIGGER_WEBSITE_PORT}"
+```
+
+In your `.env` file, set the following variables:
+
+```env
+EXPOSE_TRIGGER_WEBSITE=True
+TRIGGER_WEBSITE_DOMAIN=trigger.my.dyn.dns.com
+TRIGGER_WEBSITE_PATH=/update
+TRIGGER_WEBSITE_PORT=8080
+```
+
+#### Warning: Exposing the trigger website can pose security risks. Ensure that only trusted clients can access it.
+
+Choose a slightly cryptic subdomain name for your trigger website to make it less predictable. As a best practice, avoid using easily guessable names. Same goes for the path and port.
+
+If you have enabled the trigger webservice, **the self-IP check and the dynamic DNS update will be disabled, and you will need to manually trigger updates via the webservice.
 
 ## 🚀 Stack Deployment in Portainer (Example)
 ```bash
