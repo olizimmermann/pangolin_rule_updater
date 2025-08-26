@@ -17,8 +17,14 @@ A lightweight Docker container that automatically monitors your external IP addr
 ## 📋 Prerequisites
 
 - Docker and Docker Compose installed
+- Enable the Integration API: https://docs.digpangolin.com/manage/integration-api
 - Valid Pangolin API access token
+  - Permission required: Resource Rule -> List Resource Rules
+  - Permission required: Resource Rule -> Update Resource Rule
 - Pangolin rule ID that you want to update
+  - Visit the Swagger API at https://api.url.com/v1/docs
+Authorize using your Pangolin API token
+Enter your Resource ID (from the URL in Pangolin) into the Rules /resource/{resourceId}/rules API and click "Execute". This will list out all the Rules and the Rule ID associated with the Pangolin Resource
 
 ## 🛠️ Installation
 
