@@ -93,12 +93,21 @@ class RequestHandler(socketserver.BaseRequestHandler):
     </body>
     </html>
     """
+    html_template_no_change = """
+    <html>
+    <head><title>IP Update Trigger</title></head>
+    <body>
+    <h1>IP Update Trigger</h1>
+    <p>No IP update was necessary.</p>
+    </body>
+    </html>
+    """
 
     def handle(self):
         # Simple HTTP response for trigger
         request_data = self.request.recv(1024).decode(errors="ignore")
         
-        print(self.request)
+        # print(self.request)
         # Parse HTTP request to extract Host and Path
         response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + RequestHandler.html_template_nok
         lines = request_data.split("\r\n")
@@ -125,11 +134,12 @@ class RequestHandler(socketserver.BaseRequestHandler):
             print(f"[info] Incoming request from: {incoming_ip_address}")
             
             if incoming_ip_address != get_rule_value():
-                print(f"[info] IP address changed: {incoming_ip_address} != {get_rule_value()}")
                 update_rule(incoming_ip_address)
+                print(f"[info] IP address changed: {incoming_ip_address} != {get_rule_value()}")
+                response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + RequestHandler.html_template_ok
             else:
                 print(f"[info] IP address unchanged: {incoming_ip_address} == {get_rule_value()}")
-                response = RequestHandler.html_template_ok
+                response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + RequestHandler.html_template_no_change
 
         self.request.sendall(response.encode())
 
@@ -138,9 +148,12 @@ def main():
         # listen on TRIGGER_WEBSITE_DOMAIN:TRIGGER_WEBSITE_PORT
         while True:
             # open http server
-            with socketserver.TCPServer(('0.0.0.0', TRIGGER_WEBSITE_PORT), RequestHandler) as httpd:
-                print(f"[info] Listening for updates on {TRIGGER_WEBSITE_DOMAIN}:{TRIGGER_WEBSITE_PORT}")
-                httpd.serve_forever()
+            try:
+                with socketserver.TCPServer(('0.0.0.0', TRIGGER_WEBSITE_PORT), RequestHandler) as httpd:
+                    print(f"[info] Listening for updates on {TRIGGER_WEBSITE_DOMAIN}:{TRIGGER_WEBSITE_PORT}")
+                    httpd.serve_forever()
+            except Exception as e:
+                print(f"[error] {e}")
     else:
         while True:
             try:
