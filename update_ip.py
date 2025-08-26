@@ -86,6 +86,8 @@ class RequestHandler(socketserver.BaseRequestHandler):
     <body>
     <h1>IP Update Trigger</h1>
     <p>An update was triggered.</p>
+    <p>New IP: {incoming_ip_address}</p>
+    <p>Old IP: {stored_ip}</p>
     </body>
     </html>
     """
@@ -144,7 +146,6 @@ class RequestHandler(socketserver.BaseRequestHandler):
             stored_ip = get_rule_value()
             if incoming_ip_address != stored_ip and stored_ip is not None:
                 update_rule(incoming_ip_address)
-                stored_ip = get_rule_value()
                 print(f"[info] IP address changed: {incoming_ip_address} != {stored_ip}")
                 response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + RequestHandler.html_template_ok
             elif stored_ip is not None:
