@@ -1,8 +1,7 @@
 services:
   ip-updater:
     build: .
-    env_file: .env        # keep secrets out of Git
+    env_file: .env       
     restart: unless-stopped
-    ports:
-      - "${TRIGGER_WEBSITE_PORT}:${TRIGGER_WEBSITE_PORT}"
-    
+    # ports:
+    #   - "${TRIGGER_WEBSITE_PORT}:${TRIGGER_WEBSITE_PORT}"
