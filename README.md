@@ -25,7 +25,7 @@ A lightweight Docker container that automatically monitors your external IP addr
 1. **Clone the repository**
    ```bash
    git clone https://github.com/olizimmermann/pangolin_rule_updater.git
-   cd pangolin-ip-updater
+   cd pangolin_rule_updater
    ```
 
 2. **Create your environment file**
