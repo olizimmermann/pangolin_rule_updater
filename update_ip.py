@@ -13,7 +13,7 @@ load_dotenv()                              # read .env at runtime
 API_KEY        = os.environ["API_KEY"]
 RESOURCE_ID    = os.environ["RESOURCE_ID"]
 RULE_ID        = os.environ["RULE_ID"]
-PANGOLIN_HOST  = os.environ.get("PANGOLIN_HOST", "https://api.pangolin.example:3004") # new ip since 1.9.0
+PANGOLIN_HOST  = os.environ.get("PANGOLIN_HOST", "https://api.pangolin.example") # new ip since 1.9.0
 IP_SERVICE_URL = os.environ.get("IP_SERVICE_URL", "https://api.ipify.org")
 TARGET_DOMAIN  = os.environ.get("TARGET_DOMAIN", "my.dyn.dns.com") # your dyn dns
 LOOP_SECONDS   = int(os.environ.get("LOOP_SECONDS", "60"))
