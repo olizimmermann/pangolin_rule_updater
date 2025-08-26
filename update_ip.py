@@ -124,12 +124,13 @@ class RequestHandler(socketserver.BaseRequestHandler):
                     host = line.split(":", 1)[1].strip()
                 if line.lower().startswith("x-forwarded-for:"):
                     incoming_ip_address = line.split(":", 1)[1].strip()
+                    print(f"[info] Incoming request from (X-Forwarded-For): {incoming_ip_address}")
                 if line.lower().startswith("cf-connecting-ip:"):
                     incoming_ip_address = line.split(":", 1)[1].strip()
-                    
-        print(f"[info] Incoming request: {host}{path}")
-        print(f"host: {host}")
-        print(f"path: {path}")
+                    print(f"[info] Incoming request from (CF-Connecting-IP): {incoming_ip_address}")
+
+        print(f"[info] Incoming request address: {host}{path}")
+        host = host.split(":")[0]
         if path == TRIGGER_WEBSITE_PATH and host == TRIGGER_WEBSITE_DOMAIN:
             if not incoming_ip_address:
                 incoming_ip_address = self.client_address[0]
