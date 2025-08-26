@@ -128,6 +128,8 @@ class RequestHandler(socketserver.BaseRequestHandler):
                     incoming_ip_address = line.split(":", 1)[1].strip()
                     
         print(f"[info] Incoming request: {host}{path}")
+        print(f"host: {host}")
+        print(f"path: {path}")
         if path == TRIGGER_WEBSITE_PATH and host == TRIGGER_WEBSITE_DOMAIN:
             if not incoming_ip_address:
                 incoming_ip_address = self.client_address[0]
