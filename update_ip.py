@@ -53,7 +53,9 @@ def get_rule_value() -> str:
     """Fetch the current `value` field of the Pangolin rule."""
     url = f"{PANGOLIN_HOST}/v1/resource/{RESOURCE_ID}/rules?limit=1000&offset=0"
     resp = requests.get(url, headers=HEADERS, timeout=10)
-    resp.raise_for_status()
+    if resp.status_code != 200:
+        print(f"[error] Failed to fetch rules: {resp.status_code} {resp.text}")
+        return None
     rules = resp.json()["data"]["rules"]
     print(f"[pangolin] Fetched {len(rules)} rules")
     for rule in rules:
@@ -138,13 +140,17 @@ class RequestHandler(socketserver.BaseRequestHandler):
             if not incoming_ip_address:
                 incoming_ip_address = self.client_address[0]
             print(f"[info] Incoming request from: {incoming_ip_address}")
-            
-            if incoming_ip_address != get_rule_value():
+            stored_ip = get_rule_value()
+            if incoming_ip_address != stored_ip and stored_ip is not None:
                 update_rule(incoming_ip_address)
-                print(f"[info] IP address changed: {incoming_ip_address} != {get_rule_value()}")
+                stored_ip = get_rule_value()
+                print(f"[info] IP address changed: {incoming_ip_address} != {stored_ip}")
                 response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + RequestHandler.html_template_ok
+            elif stored_ip is not None:
+                print(f"[info] IP address unchanged: {incoming_ip_address} == {stored_ip}")
+                response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + RequestHandler.html_template_no_change
             else:
-                print(f"[info] IP address unchanged: {incoming_ip_address} == {get_rule_value()}")
+                print(f"[info] No IP address stored/Rule not found")
                 response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + RequestHandler.html_template_no_change
 
         self.request.sendall(response.encode())
@@ -168,6 +174,9 @@ def main():
                 else:
                     current_ip = get_external_ip() # default, get the external IP address of this machine
                 stored_ip  = get_rule_value()
+                if stored_ip is None:
+                    print(f"[info] No IP address stored")
+                    continue
                 if current_ip != stored_ip:
                     print(f"[info] Detected IP change: {stored_ip} → {current_ip}")
                     update_rule(current_ip)
