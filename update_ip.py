@@ -152,7 +152,7 @@ class RequestHandler(socketserver.BaseRequestHandler):
                 response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + RequestHandler.html_template_no_change
             else:
                 print(f"[info] No IP address stored/Rule not found")
-                response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + RequestHandler.html_template_no_change
+                response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + RequestHandler.html_template_nok
 
         self.request.sendall(response.encode())
 
