@@ -55,6 +55,7 @@ def get_rule_value() -> str:
     resp = requests.get(url, headers=HEADERS, timeout=10)
     resp.raise_for_status()
     rules = resp.json()["data"]["rules"]
+    print(f"[pangolin] Fetched {len(rules)} rules")
     for rule in rules:
         if rule["ruleId"] == int(RULE_ID):
             return rule["value"]
@@ -71,7 +72,8 @@ def update_rule(new_ip: str):
         "enabled":  RULE_ENABLED
     }
     resp = requests.post(url, headers=HEADERS, data=json.dumps(payload), timeout=10)
-    resp.raise_for_status()
+    if resp.status_code != 200:
+        print(f"[error] Failed to update rule {RULE_ID}: {resp.status_code} {resp.text}")
     print(f"[pangolin] Updated rule {RULE_ID} to {new_ip}")
 
 class RequestHandler(socketserver.BaseRequestHandler):
