@@ -125,7 +125,7 @@ class RequestHandler(socketserver.BaseRequestHandler):
             parts = lines[0].split()
             if len(parts) > 1:
                 path = parts[1]
-            print(lines[1:])
+            # print(lines[1:])
             for line in lines[1:]:
                 if line.lower().startswith("host:"):
                     host = line.split(":", 1)[1].strip()
