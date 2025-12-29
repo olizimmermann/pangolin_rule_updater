@@ -64,7 +64,7 @@ TARGET_DOMAIN=my.dyn.dns.com  # your dynamic DNS hostname or leave empty to chec
 PANGOLIN_HOST=https://api.pangolin.example
 
 # Runtime controls (optional)
-IP_SERVICE_URL=https://api.ipify.org     # any plain-text IP service
+IP_SERVICE_URL=https://wtfismyip.com/text     # any plain-text IP service
 LOOP_SECONDS=60                          # check interval in seconds
 
 
@@ -149,7 +149,7 @@ TRIGGER_WEBSITE_PORT=8080
 
 Choose a slightly cryptic subdomain name for your trigger website to make it less predictable. As a best practice, avoid using easily guessable names. Same goes for the path and port.
 
-If you have enabled the trigger webservice, **the self-IP check and the dynamic DNS update will be disabled, and you will need to manually trigger updates via the webservice.
+If you have enabled the trigger webservice, **the self-IP check and the dynamic DNS update will be disabled, and you will need to manually trigger updates via the webservice.**
 
 ## 🚀 Stack Deployment in Portainer (Example)
 ```bash
