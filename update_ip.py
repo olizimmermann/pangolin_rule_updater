@@ -1,192 +1,230 @@
 import os
-import socketserver
-import time
 import json
-from urllib import response
-import requests
+import random
 import socket
+import time
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse
 
+import requests
 from dotenv import load_dotenv
 
-load_dotenv()                              # read .env at runtime
+load_dotenv()
 
-API_KEY        = os.environ["API_KEY"]
-RESOURCE_ID    = os.environ["RESOURCE_ID"]
-RULE_ID        = os.environ["RULE_ID"]
-PANGOLIN_HOST  = os.environ.get("PANGOLIN_HOST", "https://api.pangolin.example") # new ip since 1.9.0
-IP_SERVICE_URL = os.environ.get("IP_SERVICE_URL", "https://api.ipify.org")
-TARGET_DOMAIN  = os.environ.get("TARGET_DOMAIN", "my.dyn.dns.com") # your dyn dns
-LOOP_SECONDS   = int(os.environ.get("LOOP_SECONDS", "60"))
-RULE_PRIORITY  = int(os.environ.get("RULE_PRIORITY", "100"))
-RULE_ACTION    = os.environ.get("RULE_ACTION", "ACCEPT").upper()
-RULE_MATCH     = os.environ.get("RULE_MATCH", "IP").upper()
+# ── Required ───────────────────────────────────────────────────────────────────
+API_KEY     = os.environ["API_KEY"]
+RESOURCE_ID = os.environ["RESOURCE_ID"]
+RULE_ID     = os.environ["RULE_ID"]
+
+# ── Optional ───────────────────────────────────────────────────────────────────
+PANGOLIN_HOST = os.environ.get("PANGOLIN_HOST", "https://api.pangolin.example")
+TARGET_DOMAIN = os.environ.get("TARGET_DOMAIN", "").strip() or None
+LOOP_SECONDS  = int(os.environ.get("LOOP_SECONDS", "60"))
+LOOP_JITTER   = int(os.environ.get("LOOP_JITTER", "10"))
+RULE_PRIORITY = int(os.environ.get("RULE_PRIORITY", "100"))
+RULE_ACTION   = os.environ.get("RULE_ACTION", "ACCEPT").upper()
+RULE_MATCH    = os.environ.get("RULE_MATCH", "IP").upper()
+RULE_ENABLED  = os.environ.get("RULE_ENABLED", "True").lower() == "true"
+
+# Comma-separated list of IP services — round-robin for rotation
+_DEFAULT_IP_SERVICES = "https://wtfismyip.com/text,https://api.ipify.org,https://icanhazip.com"
+IP_SERVICE_URLS = [
+    u.strip()
+    for u in os.environ.get("IP_SERVICE_URL", _DEFAULT_IP_SERVICES).split(",")
+    if u.strip()
+]
 
 EXPOSE_TRIGGER_WEBSITE = os.environ.get("EXPOSE_TRIGGER_WEBSITE", "False").lower() == "true"
 if EXPOSE_TRIGGER_WEBSITE:
     TRIGGER_WEBSITE_DOMAIN = os.environ.get("TRIGGER_WEBSITE_DOMAIN", "trigger.my.dyn.dns.com")
-    TRIGGER_WEBSITE_PATH = os.environ.get("TRIGGER_WEBSITE_PATH", "/update")
-    TRIGGER_WEBSITE_PORT = int(os.environ.get("TRIGGER_WEBSITE_PORT", "8080"))
+    TRIGGER_WEBSITE_PATH   = os.environ.get("TRIGGER_WEBSITE_PATH", "/update")
+    TRIGGER_WEBSITE_PORT   = int(os.environ.get("TRIGGER_WEBSITE_PORT", "8080"))
 
 if RULE_MATCH not in ["IP", "CIDR", "PATH"]:
     raise ValueError(f"Invalid RULE_MATCH: {RULE_MATCH}")
-RULE_ENABLED  = os.environ.get("RULE_ENABLED", "True").lower() == "true" 
 
-HEADERS = {
+# ── Shared HTTP session ────────────────────────────────────────────────────────
+SESSION = requests.Session()
+SESSION.headers.update({
     "accept": "*/*",
     "Authorization": f"Bearer {API_KEY}",
     "Content-Type": "application/json",
-}
+    "User-Agent": "Mozilla/5.0 (compatible; HTTPClient/1.0)",
+})
 
+# ── State ──────────────────────────────────────────────────────────────────────
+_ip_service_index = 0
+_cached_ip: str | None = None   # last IP successfully pushed to Pangolin
+
+# ── IP helpers ─────────────────────────────────────────────────────────────────
 def get_target_ip() -> str:
-    """Return the current IPv4 address of the target hostname."""
     try:
-        ip = socket.gethostbyname(TARGET_DOMAIN)
-        return ip
+        return socket.gethostbyname(TARGET_DOMAIN)
     except socket.gaierror as e:
         raise Exception(f"Failed to resolve {TARGET_DOMAIN}: {e}")
 
-def get_external_ip() -> str:
-    """Return the current public IPv4 address as a string."""
-    return requests.get(IP_SERVICE_URL, timeout=5).text.strip()
 
-def get_rule_value() -> str:
-    """Fetch the current `value` field of the Pangolin rule."""
+def get_external_ip() -> str:
+    global _ip_service_index
+    url = IP_SERVICE_URLS[_ip_service_index % len(IP_SERVICE_URLS)]
+    _ip_service_index += 1
+    return SESSION.get(url, timeout=5).text.strip()
+
+
+def get_current_ip() -> str:
+    return get_target_ip() if TARGET_DOMAIN else get_external_ip()
+
+
+# ── Pangolin helpers ───────────────────────────────────────────────────────────
+def get_rule_value() -> str | None:
+    """Fetch the current `value` field of the Pangolin rule (bootstrap only)."""
     url = f"{PANGOLIN_HOST}/v1/resource/{RESOURCE_ID}/rules?limit=1000&offset=0"
-    resp = requests.get(url, headers=HEADERS, timeout=10)
+    resp = SESSION.get(url, timeout=10)
     if resp.status_code != 200:
         print(f"[error] Failed to fetch rules: {resp.status_code} {resp.text}")
         return None
     rules = resp.json()["data"]["rules"]
-    print(f"[pangolin] Fetched {len(rules)} rules")
     for rule in rules:
         if rule["ruleId"] == int(RULE_ID):
             return rule["value"]
     print(f"[info] Rule ID {RULE_ID} not found")
     return None
 
-def update_rule(new_ip: str):
-    """POST an updated rule when the IP has changed."""
+
+def update_rule(new_ip: str) -> None:
     url = f"{PANGOLIN_HOST}/v1/resource/{RESOURCE_ID}/rule/{RULE_ID}"
     payload = {
         "action":   RULE_ACTION,
         "match":    RULE_MATCH,
         "value":    new_ip,
         "priority": RULE_PRIORITY,
-        "enabled":  RULE_ENABLED
+        "enabled":  RULE_ENABLED,
     }
-    resp = requests.post(url, headers=HEADERS, data=json.dumps(payload), timeout=10)
+    resp = SESSION.post(url, data=json.dumps(payload), timeout=10)
     if resp.status_code != 200:
-        print(f"[error] Failed to update rule {RULE_ID}: {resp.status_code} {resp.text}")
-    print(f"[pangolin] Updated rule {RULE_ID} to {new_ip}")
+        raise Exception(f"Failed to update rule {RULE_ID}: {resp.status_code} {resp.text}")
+    print(f"[pangolin] Rule {RULE_ID} updated → {new_ip}")
 
-class RequestHandler(socketserver.BaseRequestHandler):
-    html_template_ok = """
-    <html>
-    <head><title>IP Update Trigger</title></head>
-    <body>
-    <h1>IP Update Trigger</h1>
-    <p>An update was triggered.</p>
-    <p>New IP: {incoming_ip_address}</p>
-    </body>
-    </html>
-    """
-    html_template_nok = """
-    <html>
-    <head><title>IP Update Trigger</title></head>
-    <body>
-    <h1>IP Update Trigger</h1>
-    <p>An update was not triggered.</p>
-    </body>
-    </html>
-    """
-    html_template_no_change = """
-    <html>
-    <head><title>IP Update Trigger</title></head>
-    <body>
-    <h1>IP Update Trigger</h1>
-    <p>No IP update was necessary.</p>
-    </body>
-    </html>
-    """
 
-    def handle(self):
-        # Simple HTTP response for trigger
-        request_data = self.request.recv(1024).decode(errors="ignore")
-        
-        # print(self.request)
-        # Parse HTTP request to extract Host and Path
-        response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + RequestHandler.html_template_nok
-        lines = request_data.split("\r\n")
-        path = ""
-        host = ""
-        incoming_ip_address = None
-        if lines:
-            # First line: GET /path HTTP/1.1
-            parts = lines[0].split()
-            if len(parts) > 1:
-                path = parts[1]
-            # print(lines[1:])
-            for line in lines[1:]:
-                if line.lower().startswith("host:"):
-                    host = line.split(":", 1)[1].strip()
-                if line.lower().startswith("x-forwarded-for:"):
-                    incoming_ip_address = line.split(":", 1)[1].strip()
-                    print(f"[info] Incoming request from (X-Forwarded-For): {incoming_ip_address}")
-                if line.lower().startswith("cf-connecting-ip:"):
-                    incoming_ip_address = line.split(":", 1)[1].strip()
-                    print(f"[info] Incoming request from (CF-Connecting-IP): {incoming_ip_address}")
+# ── Trigger website ────────────────────────────────────────────────────────────
+_HTML_OK = """\
+<html><head><title>IP Update Trigger</title></head><body>
+<h1>IP Update Trigger</h1>
+<p>Update triggered successfully.</p>
+<p>New IP: {ip}</p>
+</body></html>"""
 
-        print(f"[info] Incoming request address: {host}{path}")
-        host = host.split(":")[0]
-        if path == TRIGGER_WEBSITE_PATH and host == TRIGGER_WEBSITE_DOMAIN:
-            if not incoming_ip_address:
-                incoming_ip_address = self.client_address[0]
-            print(f"[info] Incoming request from: {incoming_ip_address}")
-            stored_ip = get_rule_value()
-            if incoming_ip_address != stored_ip and stored_ip is not None:
-                update_rule(incoming_ip_address)
-                print(f"[info] IP address changed: {incoming_ip_address} != {stored_ip}")
-                response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + RequestHandler.html_template_ok.format(incoming_ip_address=incoming_ip_address)
-            elif stored_ip is not None:
-                print(f"[info] IP address unchanged: {incoming_ip_address} == {stored_ip}")
-                response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + RequestHandler.html_template_no_change
+_HTML_NOK = """\
+<html><head><title>IP Update Trigger</title></head><body>
+<h1>IP Update Trigger</h1>
+<p>Update could not be triggered.</p>
+</body></html>"""
+
+_HTML_NO_CHANGE = """\
+<html><head><title>IP Update Trigger</title></head><body>
+<h1>IP Update Trigger</h1>
+<p>No change — IP is already up-to-date.</p>
+</body></html>"""
+
+
+class TriggerHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        global _cached_ip
+        host = self.headers.get("Host", "").split(":")[0]
+        path = urlparse(self.path).path
+
+        if path != TRIGGER_WEBSITE_PATH or host != TRIGGER_WEBSITE_DOMAIN:
+            self._send(404, "<h1>Not Found</h1>")
+            return
+
+        incoming_ip = (
+            self.headers.get("Cf-Connecting-Ip")
+            or (self.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+            or self.client_address[0]
+        )
+        print(f"[trigger] Request from {incoming_ip}")
+
+        if _cached_ip is None:
+            _cached_ip = get_rule_value()
+
+        if _cached_ip is None:
+            self._send(200, _HTML_NOK)
+            return
+
+        if incoming_ip != _cached_ip:
+            try:
+                update_rule(incoming_ip)
+                _cached_ip = incoming_ip
+                self._send(200, _HTML_OK.format(ip=incoming_ip))
+            except Exception as e:
+                print(f"[error] {e}")
+                self._send(200, _HTML_NOK)
+        else:
+            print(f"[trigger] IP unchanged ({incoming_ip})")
+            self._send(200, _HTML_NO_CHANGE)
+
+    def _send(self, code: int, body: str) -> None:
+        encoded = body.encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+    def log_message(self, format, *args):
+        pass  # suppress default CLF access log
+
+
+def run_trigger_server() -> None:
+    print(f"[info] Trigger server on :{TRIGGER_WEBSITE_PORT}  ({TRIGGER_WEBSITE_DOMAIN}{TRIGGER_WEBSITE_PATH})")
+    with HTTPServer(("0.0.0.0", TRIGGER_WEBSITE_PORT), TriggerHandler) as httpd:
+        httpd.serve_forever()
+
+
+# ── Polling loop ───────────────────────────────────────────────────────────────
+def run_polling_loop() -> None:
+    global _cached_ip
+    backoff = 5
+
+    while True:
+        try:
+            current_ip = get_current_ip()
+
+            if _cached_ip is None or current_ip != _cached_ip:
+                label = "Initial IP" if _cached_ip is None else f"{_cached_ip} →"
+                print(f"[info] {label} {current_ip}")
+                update_rule(current_ip)
+                _cached_ip = current_ip
             else:
-                print(f"[info] No IP address stored/Rule not found")
-                response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + RequestHandler.html_template_nok
+                print(f"[info] IP unchanged ({current_ip})")
 
-        self.request.sendall(response.encode())
+            backoff = 5  # reset after a clean iteration
+            jitter = random.uniform(-LOOP_JITTER, LOOP_JITTER)
+            time.sleep(max(1, LOOP_SECONDS + jitter))
 
+        except Exception as e:
+            print(f"[error] {e}")
+            print(f"[info]  Retrying in {backoff}s")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 300)
+
+
+# ── Entry point ────────────────────────────────────────────────────────────────
 def main():
-    if EXPOSE_TRIGGER_WEBSITE:
-        # listen on TRIGGER_WEBSITE_DOMAIN:TRIGGER_WEBSITE_PORT
-        while True:
-            # open http server
-            try:
-                with socketserver.TCPServer(('0.0.0.0', TRIGGER_WEBSITE_PORT), RequestHandler) as httpd:
-                    print(f"[info] Listening for updates on {TRIGGER_WEBSITE_DOMAIN}:{TRIGGER_WEBSITE_PORT}")
-                    httpd.serve_forever()
-            except Exception as e:
-                print(f"[error] {e}")
+    global _cached_ip
+
+    print("[info] Fetching initial rule state from Pangolin...")
+    _cached_ip = get_rule_value()
+    if _cached_ip:
+        print(f"[info] Cached IP: {_cached_ip}")
     else:
-        while True:
-            try:
-                if TARGET_DOMAIN != "my.dyn.dns.com": # the TARGET_DOMAIN is set, that means you want to use it
-                    current_ip = get_target_ip() 
-                else:
-                    current_ip = get_external_ip() # default, get the external IP address of this machine
-                stored_ip  = get_rule_value()
-                if stored_ip is None:
-                    print(f"[info] No IP address stored")
-                    continue
-                if current_ip != stored_ip:
-                    print(f"[info] Detected IP change: {stored_ip} → {current_ip}")
-                    update_rule(current_ip)
-                else:
-                    print(f"[info] IP unchanged ({current_ip})")
-            except Exception as e:
-                print(f"[error] {e}")
-            time.sleep(LOOP_SECONDS)
+        print("[warn] Could not fetch initial rule value; will push on first check")
+
+    if EXPOSE_TRIGGER_WEBSITE:
+        run_trigger_server()
+    else:
+        run_polling_loop()
+
 
 if __name__ == "__main__":
     main()
-
