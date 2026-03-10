@@ -1,3 +1,4 @@
+import ipaddress
 import os
 import json
 import random
@@ -54,7 +55,9 @@ SESSION.headers.update({
 
 # ── State ──────────────────────────────────────────────────────────────────────
 _ip_service_index = 0
-_cached_ip: str | None = None   # last IP successfully pushed to Pangolin
+_cached_ip: str | None = None       # last IP successfully pushed to Pangolin
+_rule_fetch_failed_at: float | None = None  # timestamp of last failed get_rule_value()
+_RULE_FETCH_COOLDOWN = 60           # seconds to wait before retrying a failed fetch
 
 # ── IP helpers ─────────────────────────────────────────────────────────────────
 def get_target_ip() -> str:
@@ -68,7 +71,12 @@ def get_external_ip() -> str:
     global _ip_service_index
     url = IP_SERVICE_URLS[_ip_service_index % len(IP_SERVICE_URLS)]
     _ip_service_index += 1
-    return SESSION.get(url, timeout=5).text.strip()
+    raw = SESSION.get(url, timeout=5).text.strip()
+    try:
+        ipaddress.ip_address(raw)
+    except ValueError:
+        raise ValueError(f"IP service returned invalid address: {raw!r}")
+    return raw
 
 
 def get_current_ip() -> str:
@@ -129,7 +137,7 @@ _HTML_NO_CHANGE = """\
 
 class TriggerHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        global _cached_ip
+        global _cached_ip, _rule_fetch_failed_at
         host = self.headers.get("Host", "").split(":")[0]
         path = urlparse(self.path).path
 
@@ -145,10 +153,17 @@ class TriggerHandler(BaseHTTPRequestHandler):
         print(f"[trigger] Request from {incoming_ip}")
 
         if _cached_ip is None:
-            _cached_ip = get_rule_value()
+            now = time.time()
+            if _rule_fetch_failed_at is None or now - _rule_fetch_failed_at >= _RULE_FETCH_COOLDOWN:
+                try:
+                    _cached_ip = get_rule_value()
+                except Exception as e:
+                    print(f"[error] Could not fetch rule value: {e}")
+                if _cached_ip is None:
+                    _rule_fetch_failed_at = now
 
         if _cached_ip is None:
-            self._send(200, _HTML_NOK)
+            self._send(503, _HTML_NOK)
             return
 
         if incoming_ip != _cached_ip:
@@ -158,7 +173,7 @@ class TriggerHandler(BaseHTTPRequestHandler):
                 self._send(200, _HTML_OK.format(ip=incoming_ip))
             except Exception as e:
                 print(f"[error] {e}")
-                self._send(200, _HTML_NOK)
+                self._send(500, _HTML_NOK)
         else:
             print(f"[trigger] IP unchanged ({incoming_ip})")
             self._send(200, _HTML_NO_CHANGE)
