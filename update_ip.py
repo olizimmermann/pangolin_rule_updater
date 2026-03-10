@@ -218,7 +218,9 @@ def run_polling_loop() -> None:
             time.sleep(max(1, LOOP_SECONDS + jitter))
 
         except Exception as e:
+            import traceback
             print(f"[error] {e}")
+            traceback.print_exc()
             print(f"[info]  Retrying in {backoff}s")
             time.sleep(backoff)
             backoff = min(backoff * 2, 300)
