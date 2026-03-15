@@ -5,7 +5,7 @@ import random
 import socket
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 import requests
 from dotenv import load_dotenv
@@ -40,6 +40,7 @@ if EXPOSE_TRIGGER_WEBSITE:
     TRIGGER_WEBSITE_DOMAIN = os.environ.get("TRIGGER_WEBSITE_DOMAIN", "trigger.my.dyn.dns.com")
     TRIGGER_WEBSITE_PATH   = os.environ.get("TRIGGER_WEBSITE_PATH", "/update")
     TRIGGER_WEBSITE_PORT   = int(os.environ.get("TRIGGER_WEBSITE_PORT", "8080"))
+    TRIGGER_SECRET         = os.environ.get("TRIGGER_SECRET", "")
 
 if RULE_MATCH not in ["IP", "CIDR", "PATH"]:
     raise ValueError(f"Invalid RULE_MATCH: {RULE_MATCH}")
@@ -135,15 +136,30 @@ _HTML_NO_CHANGE = """\
 </body></html>"""
 
 
+_HTML_UNAUTHORIZED = """\
+<html><head><title>IP Update Trigger</title></head><body>
+<h1>IP Update Trigger</h1>
+<p>Unauthorized.</p>
+</body></html>"""
+
+
 class TriggerHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         global _cached_ip, _rule_fetch_failed_at
+        parsed = urlparse(self.path)
         host = self.headers.get("Host", "").split(":")[0]
-        path = urlparse(self.path).path
+        path = parsed.path
 
         if path != TRIGGER_WEBSITE_PATH or host != TRIGGER_WEBSITE_DOMAIN:
             self._send(404, "<h1>Not Found</h1>")
             return
+
+        if TRIGGER_SECRET:
+            provided = parse_qs(parsed.query).get("token", [""])[0]
+            if provided != TRIGGER_SECRET:
+                print(f"[warn] Unauthorized trigger attempt — bad or missing token")
+                self._send(401, _HTML_UNAUTHORIZED)
+                return
 
         incoming_ip = (
             self.headers.get("Cf-Connecting-Ip")

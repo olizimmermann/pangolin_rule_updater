@@ -75,6 +75,7 @@ EXPOSE_TRIGGER_WEBSITE=False
 TRIGGER_WEBSITE_DOMAIN=trigger.my.dyn.dns.com
 TRIGGER_WEBSITE_PATH=/update
 TRIGGER_WEBSITE_PORT=8080
+TRIGGER_SECRET=              # recommended when EXPOSE_TRIGGER_WEBSITE=True
 ```
 
 ### Configuration reference
@@ -97,6 +98,7 @@ TRIGGER_WEBSITE_PORT=8080
 | `TRIGGER_WEBSITE_DOMAIN` | ❌ | `trigger.my.dyn.dns.com` | Expected `Host` header for the trigger endpoint |
 | `TRIGGER_WEBSITE_PATH` | ❌ | `/update` | Path for the trigger endpoint |
 | `TRIGGER_WEBSITE_PORT` | ❌ | `8080` | Port the trigger server listens on |
+| `TRIGGER_SECRET` | ❌ | — | If set, requests must include `?token=<value>`; missing/wrong token → HTTP 401 |
 
 ## 🚀 Usage
 
@@ -153,7 +155,7 @@ TRIGGER_WEBSITE_PATH=/update
 TRIGGER_WEBSITE_PORT=8080
 ```
 
-> ⚠️ **Security note:** Anyone who can reach this endpoint can update your firewall rule. Use an unpredictable subdomain and path, restrict access at the network level where possible, and never expose it without a trusted front-end.
+> ⚠️ **Security note:** Anyone who can reach this endpoint can update your firewall rule. Set `TRIGGER_SECRET` and share the full URL including `?token=…` only with trusted users. See [Securing the trigger endpoint](#securing-the-trigger-endpoint) below.
 
 ## 🐳 Stack deployment in Portainer (example)
 
@@ -234,7 +236,30 @@ docker compose logs -f
 - Restrict file permissions: `chmod 600 .env`
 - Use Docker secrets for production deployments
 - Rotate API keys regularly
-- If using the trigger website, prefer a non-guessable subdomain, path, and port
+
+## Securing the trigger endpoint
+
+When `EXPOSE_TRIGGER_WEBSITE=True`, protect the endpoint with `TRIGGER_SECRET`:
+
+```env
+TRIGGER_SECRET=replace-with-a-long-random-string
+```
+
+Requests without a matching `?token=` query parameter are rejected with HTTP 401 and logged as a warning. The full trigger URL then becomes a **magic link**:
+
+```
+https://trigger.my.dyn.dns.com/update?token=replace-with-a-long-random-string
+```
+
+Bookmark this URL on your phone or laptop — one tap updates the rule, no app required.
+
+**Path hardening:** The default path `/update` is predictable. If you do not set `TRIGGER_SECRET`, use a random webhook-style path instead — something like `/trigger/a3f8c2e1b7d94f05` — so the endpoint is not trivially discoverable by scanners. If `TRIGGER_SECRET` is set, the path matters less, but there is no reason not to change the default anyway.
+
+**Port:** Avoid well-known ports (80, 443, 8080, 8443) — they attract the most automated scanning traffic. Pick a random high port (e.g. 47823) to reduce noise. This is not a security control on its own, but it lowers the number of unsolicited probes you will see in the logs.
+
+**A note on subdomain privacy and CT logs:** If you use HTTP-01 or TLS-ALPN-01 ACME validation to obtain a TLS certificate for the trigger subdomain, the subdomain will appear in public Certificate Transparency logs (searchable at [crt.sh](https://crt.sh)). If you want the subdomain to stay private, use a wildcard certificate obtained via DNS-01 challenge instead. Regardless of subdomain visibility, `TRIGGER_SECRET` is the primary access control.
+
+**Worst-case abuse:** An attacker who successfully calls the endpoint can whitelist their own IP address, which grants them direct access to your protected resources — no credentials required. That is the entire point of the rule. Keep the token secret and rotate it if compromised.
 
 ## 🚀 Advanced usage
 
